@@ -92,6 +92,10 @@ public class Intersection implements TrafficSubject {
      * After vehicles move, any YELLOW light finalizes to RED (completing the phase transition).
      */
     public List<Vehicle> executeStep() {
+        // Notify observers with pre-movement state so Memento captures the snapshot
+        // that can be used to undo this step (i.e. restore to exactly before vehicles moved).
+        notifyObservers();
+
         List<Vehicle> left = new ArrayList<>();
 
         for (Direction dir : Direction.values()) {
@@ -113,7 +117,6 @@ public class Intersection implements TrafficSubject {
         }
 
         stepsInCurrentPhase++;
-        notifyObservers();
         return left;
     }
 

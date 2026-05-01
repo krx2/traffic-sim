@@ -9,7 +9,9 @@ import java.util.Optional;
 
 /**
  * Caretaker in the Memento pattern and Observer of Intersection steps.
- * Saves a snapshot after every step; supports single-level undo.
+ * Saves a snapshot at the START of every step (pre-movement state),
+ * enabling true single-level undo: restoring the snapshot rolls back
+ * the intersection to exactly the state it was in before that step ran.
  */
 public class SimulationHistory implements TrafficObserver {
 
