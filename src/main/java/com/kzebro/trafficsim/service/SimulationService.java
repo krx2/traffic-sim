@@ -1,6 +1,7 @@
 package com.kzebro.trafficsim.service;
 
 import com.kzebro.trafficsim.command.SimulationCommand;
+import com.kzebro.trafficsim.command.StepCommand;
 import com.kzebro.trafficsim.dto.SimulationRequest;
 import com.kzebro.trafficsim.dto.SimulationResponse;
 import com.kzebro.trafficsim.dto.StepStatus;
@@ -8,7 +9,7 @@ import com.kzebro.trafficsim.factory.CommandFactory;
 import com.kzebro.trafficsim.memento.SimulationHistory;
 import com.kzebro.trafficsim.model.Intersection;
 import com.kzebro.trafficsim.model.LightPhase;
-import com.kzebro.trafficsim.command.StepCommand;
+import com.kzebro.trafficsim.observer.LightStateObserver;
 import com.kzebro.trafficsim.strategy.OptimizationStrategy;
 import com.kzebro.trafficsim.strategy.WeightedQueueStrategy;
 import org.springframework.stereotype.Service;
@@ -25,14 +26,6 @@ public class SimulationService {
         this.commandFactory = commandFactory;
     }
 
-    /**
-     * Runs a full simulation from the provided command list.
-     * Each call creates a fresh intersection — the service is stateless.
-     *
-     * Flow per command:
-     *   - addVehicle → enqueue vehicle on the target road
-     *   - step       → ask strategy for the optimal phase, apply it, then move vehicles
-     */
     public SimulationResponse run(SimulationRequest request) {
         return run(request, new WeightedQueueStrategy());
     }
@@ -40,7 +33,9 @@ public class SimulationService {
     public SimulationResponse run(SimulationRequest request, OptimizationStrategy strategy) {
         Intersection intersection = new Intersection();
         SimulationHistory history = new SimulationHistory();
-        intersection.addObserver(history);   // Observer wires Memento to each step
+        LightStateObserver lightObserver = new LightStateObserver();
+        intersection.addObserver(history);
+        intersection.addObserver(lightObserver);
 
         List<StepStatus> stepStatuses = new ArrayList<>();
 
@@ -52,7 +47,10 @@ public class SimulationService {
                 intersection.setPhase(optimal);
             }
 
-            command.execute(intersection).ifPresent(stepStatuses::add);
+            // Replace the placeholder StepStatus (null lights) with one containing
+            // the light colors captured by the observer before vehicles moved.
+            command.execute(intersection).ifPresent(status ->
+                    stepStatuses.add(new StepStatus(status.leftVehicles(), lightObserver.getSnapshot())));
         }
 
         return new SimulationResponse(stepStatuses);

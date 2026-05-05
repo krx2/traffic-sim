@@ -14,6 +14,6 @@ public class StepCommand implements SimulationCommand {
         List<String> leftVehicleIds = intersection.executeStep().stream()
                 .map(Vehicle::id)
                 .toList();
-        return Optional.of(new StepStatus(leftVehicleIds));
+        return Optional.of(new StepStatus(leftVehicleIds, null));
     }
 }
