@@ -4,6 +4,17 @@ Symulator skrzyżowania z sygnalizacją świetlną. Backend w Spring Boot, front
 
 ## Uruchomienie
 
+### Tryb CLI
+
+Zbuduj projekt i uruchom z plikiem wejściowym i wyjściowym:
+
+```bash
+./mvnw package -DskipTests
+java -jar target/traffic-sim-0.0.1-SNAPSHOT.jar input.json output.json
+```
+
+### Tryb serwera web
+
 Backend (port 8080):
 
 ```bash
