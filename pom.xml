@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.kzebro</groupId>
     <artifactId>traffic-sim</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>traffic-sim</name>
     <description>traffic-sim</description>
     <url/>

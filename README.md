@@ -10,7 +10,7 @@ Zbuduj projekt i uruchom z plikiem wejściowym i wyjściowym:
 
 ```bash
 ./mvnw package -DskipTests
-java -jar target/traffic-sim-0.0.1-SNAPSHOT.jar input.json output.json
+java -jar target/traffic-sim-1.0.0.jar input.json output.json
 ```
 
 ### Tryb serwera web
