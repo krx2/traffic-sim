@@ -1,60 +1,60 @@
 package com.kzebro.trafficsim.model;
 
-import com.kzebro.trafficsim.model.light.TrafficLight;
-
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
+import java.util.EnumMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 public class Road {
 
     private final Direction direction;
-    private final TrafficLight trafficLight;
-    private final Deque<Vehicle> queue = new ArrayDeque<>();
+    private final Map<LaneType, Lane> lanes;
 
-    public Road(Direction direction, TrafficLight trafficLight) {
+    public Road(Direction direction, Map<LaneType, Lane> lanes) {
         this.direction = direction;
-        this.trafficLight = trafficLight;
+        this.lanes = new EnumMap<>(lanes);
     }
 
+    /** Routes the vehicle to the correct lane based on its destination. */
     public void enqueue(Vehicle vehicle) {
-        queue.addLast(vehicle);
+        LaneType type = LaneType.forMovement(direction, vehicle.endRoad());
+        lanes.get(type).enqueue(vehicle);
     }
 
-    public Optional<Vehicle> peek() {
-        return Optional.ofNullable(queue.peekFirst());
+    public Lane getLane(LaneType type) {
+        return lanes.get(type);
     }
 
-    public Optional<Vehicle> dequeue() {
-        return Optional.ofNullable(queue.pollFirst());
+    public Map<LaneType, Lane> getLanes() {
+        return lanes;
     }
 
     public int queueSize() {
-        return queue.size();
+        return lanes.values().stream().mapToInt(Lane::queueSize).sum();
+    }
+
+    public int laneQueueSize(LaneType type) {
+        return lanes.get(type).queueSize();
     }
 
     public boolean isEmpty() {
-        return queue.isEmpty();
+        return lanes.values().stream().allMatch(Lane::isEmpty);
     }
 
     public Direction getDirection() {
         return direction;
     }
 
-    public TrafficLight getTrafficLight() {
-        return trafficLight;
+    public Map<LaneType, List<Vehicle>> snapshotVehicles() {
+        Map<LaneType, List<Vehicle>> snapshot = new EnumMap<>(LaneType.class);
+        for (LaneType type : LaneType.values()) {
+            snapshot.put(type, lanes.get(type).snapshotVehicles());
+        }
+        return snapshot;
     }
 
-    /** Returns a snapshot of current vehicle IDs for Memento. */
-    public List<Vehicle> snapshotVehicles() {
-        return new ArrayList<>(queue);
-    }
-
-    /** Restores vehicle queue from a Memento snapshot. */
-    public void restoreVehicles(List<Vehicle> vehicles) {
-        queue.clear();
-        queue.addAll(vehicles);
+    public void restoreVehicles(Map<LaneType, List<Vehicle>> snapshot) {
+        for (LaneType type : LaneType.values()) {
+            lanes.get(type).restoreVehicles(snapshot.getOrDefault(type, List.of()));
+        }
     }
 }

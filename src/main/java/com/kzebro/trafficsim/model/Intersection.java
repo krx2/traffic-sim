@@ -14,23 +14,23 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Composite root: holds four Roads (N/S/E/W), manages the active LightPhase,
- * and acts as the Subject in the Observer pattern.
- */
 public class Intersection implements TrafficSubject {
 
     private final Map<Direction, Road> roads = new EnumMap<>(Direction.class);
-    private LightPhase currentPhase = LightPhase.NS_GREEN;
+    private LightPhase currentPhase = LightPhase.NS_STRAIGHT_RIGHT;
     private int stepsInCurrentPhase = 0;
     private final List<TrafficObserver> observers = new ArrayList<>();
 
     public Intersection() {
         for (Direction dir : Direction.values()) {
-            TrafficLight light = new TrafficLight(
-                    currentPhase.isGreenFor(dir) ? new GreenState() : new RedState()
-            );
-            roads.put(dir, new Road(dir, light));
+            Map<LaneType, Lane> lanes = new EnumMap<>(LaneType.class);
+            for (LaneType laneType : LaneType.values()) {
+                TrafficLight light = new TrafficLight(
+                        currentPhase.isGreenFor(dir, laneType) ? new GreenState() : new RedState()
+                );
+                lanes.put(laneType, new Lane(laneType, light));
+            }
+            roads.put(dir, new Road(dir, lanes));
         }
     }
 
@@ -53,66 +53,66 @@ public class Intersection implements TrafficSubject {
 
     // ---- Phase management ----
 
-    /**
-     * Switches the active phase.
-     * Outgoing roads (were GREEN) transition to YELLOW so aggressive drivers
-     * can still clear the intersection this step; incoming roads go GREEN immediately.
-     * YELLOW lights are finalized to RED at the end of {@link #executeStep()}.
-     */
-    public void setPhase(LightPhase phase) {
-        if (this.currentPhase == phase) return;
+    public void setPhase(LightPhase newPhase) {
+        if (this.currentPhase == newPhase) return;
 
         for (Direction dir : Direction.values()) {
-            roads.get(dir).getTrafficLight().setState(
-                    currentPhase.isGreenFor(dir) ? new YellowState() : new GreenState()
-            );
+            for (LaneType laneType : LaneType.values()) {
+                Lane lane = roads.get(dir).getLane(laneType);
+                if (newPhase.isClearance()) {
+                    // All-red clearance: skip the yellow warning so every lane is RED this step
+                    lane.getTrafficLight().setState(new RedState());
+                } else if (currentPhase.isGreenFor(dir, laneType)) {
+                    lane.getTrafficLight().setState(new YellowState());
+                } else if (newPhase.isGreenFor(dir, laneType)) {
+                    lane.getTrafficLight().setState(new GreenState());
+                } else {
+                    lane.getTrafficLight().setState(new RedState());
+                }
+            }
         }
-        this.currentPhase = phase;
+        this.currentPhase = newPhase;
         this.stepsInCurrentPhase = 0;
     }
 
-    /** Used for clean restoration (no yellow transition needed). */
     private void applyPhaseToLights() {
         for (Direction dir : Direction.values()) {
-            roads.get(dir).getTrafficLight().setState(
-                    currentPhase.isGreenFor(dir) ? new GreenState() : new RedState()
-            );
+            for (LaneType laneType : LaneType.values()) {
+                Lane lane = roads.get(dir).getLane(laneType);
+                lane.getTrafficLight().setState(
+                        currentPhase.isGreenFor(dir, laneType) ? new GreenState() : new RedState()
+                );
+            }
         }
     }
 
     // ---- Step execution ----
 
-    /**
-     * Advances one simulation step.
-     * Each road's front vehicle passes only if its {@code DriverStrategy.canPass(lightColor)} returns true:
-     * - GREEN  → both passive and aggressive drivers pass
-     * - YELLOW → only aggressive drivers pass (passive stop)
-     * - RED    → nobody passes
-     *
-     * After vehicles move, any YELLOW light finalizes to RED (completing the phase transition).
-     */
     public List<Vehicle> executeStep() {
-        // Notify observers with pre-movement state so Memento captures the snapshot
-        // that can be used to undo this step (i.e. restore to exactly before vehicles moved).
         notifyObservers();
 
         List<Vehicle> left = new ArrayList<>();
 
         for (Direction dir : Direction.values()) {
             Road road = roads.get(dir);
-            LightColor color = road.getTrafficLight().getColor();
-            road.peek().ifPresent(vehicle -> {
-                if (vehicle.driverStrategy().canPass(color)) {
-                    road.dequeue().ifPresent(left::add);
-                }
-            });
+            for (LaneType laneType : LaneType.values()) {
+                Lane lane = road.getLane(laneType);
+                LightColor color = lane.getTrafficLight().getColor();
+                lane.peek().ifPresent(vehicle -> {
+                    if (vehicle.driverStrategy().canPass(color)) {
+                        lane.dequeue().ifPresent(left::add);
+                    }
+                });
+            }
         }
 
         // Finalize phase transition: yellow → red
         for (Direction dir : Direction.values()) {
-            TrafficLight light = roads.get(dir).getTrafficLight();
-            if (light.getColor() == LightColor.YELLOW) {
-                light.transition();
+            for (LaneType laneType : LaneType.values()) {
+                TrafficLight light = roads.get(dir).getLane(laneType).getTrafficLight();
+                if (light.getColor() == LightColor.YELLOW) {
+                    light.transition();
+                }
             }
         }
 
@@ -130,10 +130,14 @@ public class Intersection implements TrafficSubject {
         return roads.get(direction).queueSize();
     }
 
+    public int getLaneQueueSize(Direction direction, LaneType laneType) {
+        return roads.get(direction).laneQueueSize(laneType);
+    }
+
     // ---- Memento ----
 
     public IntersectionMemento saveMemento() {
-        Map<Direction, List<Vehicle>> snapshot = new EnumMap<>(Direction.class);
+        Map<Direction, Map<LaneType, List<Vehicle>>> snapshot = new EnumMap<>(Direction.class);
         for (Direction dir : Direction.values()) {
             snapshot.put(dir, roads.get(dir).snapshotVehicles());
         }

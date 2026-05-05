@@ -4,7 +4,8 @@ import com.kzebro.trafficsim.model.Intersection;
 import com.kzebro.trafficsim.model.LightPhase;
 
 /**
- * Switches the active phase every {@code phaseDuration} steps regardless of queue load.
+ * Advances to the next phase every {@code phaseDuration} steps, cycling through all six phases.
+ * Clearance phases always last exactly one step regardless of {@code phaseDuration}.
  */
 public class FixedTimeStrategy implements OptimizationStrategy {
 
@@ -20,9 +21,12 @@ public class FixedTimeStrategy implements OptimizationStrategy {
 
     @Override
     public LightPhase determinePhase(Intersection intersection) {
-        if (intersection.getStepsInCurrentPhase() >= phaseDuration) {
-            return intersection.getCurrentPhase().opposite();
+        LightPhase current = intersection.getCurrentPhase();
+        int steps = intersection.getStepsInCurrentPhase();
+
+        if (current.isClearance()) {
+            return steps >= 1 ? current.next() : current;
         }
-        return intersection.getCurrentPhase();
+        return steps >= phaseDuration ? current.next() : current;
     }
 }

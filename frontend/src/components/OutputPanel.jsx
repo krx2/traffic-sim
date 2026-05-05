@@ -6,7 +6,7 @@ export default function OutputPanel({ response, currentStep, setCurrentStep }) {
       <div className="panel output-panel">
         <div className="panel-title">Wyniki</div>
         <div className="empty-output">
-          <div className="empty-icon">📋</div>
+          <div className="empty-icon">output</div>
           <div>Uruchom symulację,<br />aby zobaczyć wyniki</div>
         </div>
       </div>

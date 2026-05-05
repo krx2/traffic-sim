@@ -60,6 +60,11 @@
   flex-shrink: 0;
 }
 
+.legend-sep {
+  color: #334155;
+  font-size: 0.8rem;
+}
+
 .step-nav {
   display: flex;
   align-items: center;

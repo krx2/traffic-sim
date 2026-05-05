@@ -1,6 +1,7 @@
 package com.kzebro.trafficsim.dto;
 
 import com.kzebro.trafficsim.model.Direction;
+import com.kzebro.trafficsim.model.LaneType;
 import com.kzebro.trafficsim.model.light.LightColor;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -11,6 +12,6 @@ import java.util.Map;
 public record StepStatus(
         @Schema(description = "IDs of vehicles that left the intersection in this step")
         List<String> leftVehicles,
-        @Schema(description = "Traffic light color per direction at the moment vehicles moved")
-        Map<Direction, LightColor> lights
+        @Schema(description = "Traffic light color per direction and lane type at the moment vehicles moved")
+        Map<Direction, Map<LaneType, LightColor>> lights
 ) {}

@@ -21,66 +21,93 @@ class StrategyTest {
 
     @BeforeEach
     void setUp() {
-        intersection = new Intersection(); // initial phase: NS_GREEN
+        intersection = new Intersection(); // initial phase: NS_STRAIGHT_RIGHT
     }
 
     // ---- WeightedQueueStrategy ----
 
     @Test
-    void weighted_ewHeavier_switchesToEwGreen() {
-        addVehicles(NORTH, 1);
-        addVehicles(WEST,  3);
+    void weighted_nsHasVehicles_staysInNsStraightRight() {
+        addVehicles(NORTH, SOUTH, 3);
 
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_GREEN);
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
     }
 
     @Test
-    void weighted_nsHeavier_staysNsGreen() {
-        addVehicles(NORTH, 3);
-        addVehicles(WEST,  1);
-
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_GREEN);
+    void weighted_nsEmpty_noNsLeft_advancesToNsEwClearance() {
+        // No vehicles anywhere → NS straight/right empty → skip NS_LEFT → clearance first
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_EW_CLEARANCE);
     }
 
     @Test
-    void weighted_equal_keepsCurrentPhase() {
-        addVehicles(NORTH, 2);
-        addVehicles(WEST,  2);
+    void weighted_nsEmptyStraightRight_butNsLeftHasVehicles_advancesToNsLeft() {
+        addVehicles(NORTH, EAST, 2); // NORTH→EAST = LEFT_TURN
 
-        // Current is NS_GREEN → tie should keep NS_GREEN (hysteresis)
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_GREEN);
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_LEFT);
     }
 
     @Test
-    void weighted_bothEmpty_keepsCurrentPhase() {
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_GREEN);
+    void weighted_inNsLeft_vehiclesPresent_staysInNsLeft() {
+        intersection.setPhase(NS_LEFT);
+        addVehicles(NORTH, EAST, 1);
+
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_LEFT);
     }
 
     @Test
-    void weighted_switchedToEW_nsHeavierLater_switchesBack() {
-        intersection.setPhase(EW_GREEN);
-        addVehicles(NORTH, 4);
-        addVehicles(WEST,  1);
+    void weighted_inNsLeft_empty_advancesToNsEwClearance() {
+        intersection.setPhase(NS_LEFT);
 
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_GREEN);
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_EW_CLEARANCE);
     }
 
     @Test
-    void weighted_switchedToEW_tieKeepsEwGreen() {
-        intersection.setPhase(EW_GREEN);
-        addVehicles(NORTH, 2);
-        addVehicles(WEST,  2);
+    void weighted_inNsEwClearance_staysFirstStep_thenAdvancesToEwStraightRight() {
+        intersection.setPhase(NS_EW_CLEARANCE);
+        // stepsInPhase=0 → keep clearance this step
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_EW_CLEARANCE);
 
-        // Current is EW_GREEN → tie should keep EW_GREEN (hysteresis)
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_GREEN);
+        intersection.executeStep(); // stepsInPhase=1
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_STRAIGHT_RIGHT);
     }
 
     @Test
-    void weighted_allVehiclesOnSouthAndEast() {
-        addVehicles(SOUTH, 3);
-        addVehicles(EAST,  5);
-        // NS=3, EW=5 → EW wins
-        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_GREEN);
+    void weighted_inEwStraightRight_ewHasVehicles_stays() {
+        intersection.setPhase(EW_STRAIGHT_RIGHT);
+        addVehicles(WEST, EAST, 2);
+
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_STRAIGHT_RIGHT);
+    }
+
+    @Test
+    void weighted_inEwStraightRight_empty_noEwLeft_advancesToEwNsClearance() {
+        intersection.setPhase(EW_STRAIGHT_RIGHT);
+
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_NS_CLEARANCE);
+    }
+
+    @Test
+    void weighted_inEwStraightRight_empty_ewLeftHasVehicles_advancesToEwLeft() {
+        intersection.setPhase(EW_STRAIGHT_RIGHT);
+        addVehicles(EAST, SOUTH, 1); // EAST→SOUTH = LEFT_TURN
+
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_LEFT);
+    }
+
+    @Test
+    void weighted_inEwLeft_empty_advancesToEwNsClearance() {
+        intersection.setPhase(EW_LEFT);
+
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_NS_CLEARANCE);
+    }
+
+    @Test
+    void weighted_inEwNsClearance_staysFirstStep_thenAdvancesToNsStraightRight() {
+        intersection.setPhase(EW_NS_CLEARANCE);
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(EW_NS_CLEARANCE);
+
+        intersection.executeStep();
+        assertThat(weighted.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
     }
 
     // ---- FixedTimeStrategy ----
@@ -90,33 +117,61 @@ class StrategyTest {
         FixedTimeStrategy strategy = new FixedTimeStrategy(3);
         intersection.executeStep();
         intersection.executeStep();
-        // stepsInCurrentPhase == 2 < 3
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_GREEN);
+
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
     }
 
     @Test
-    void fixedTime_atDuration_switchesPhase() {
+    void fixedTime_atDuration_advancesToNextPhase() {
         FixedTimeStrategy strategy = new FixedTimeStrategy(3);
         intersection.executeStep();
         intersection.executeStep();
         intersection.executeStep();
-        // stepsInCurrentPhase == 3 >= 3
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_GREEN);
+
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_LEFT);
     }
 
     @Test
-    void fixedTime_afterReset_countsFromZero() {
-        FixedTimeStrategy strategy = new FixedTimeStrategy(2);
-        intersection.executeStep();
-        intersection.executeStep();
-        // stepsInPhase == 2 → should switch
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_GREEN);
+    void fixedTime_cyclesThroughAllSixPhases() {
+        FixedTimeStrategy strategy = new FixedTimeStrategy(1);
 
-        // Simulate the switch that a service would apply
-        intersection.setPhase(EW_GREEN);
-        intersection.executeStep();
-        // stepsInPhase == 1 (reset after switch), 1 < 2 → keep EW_GREEN
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_GREEN);
+        // stepsInPhase=0 < 1 → keep NS_STRAIGHT_RIGHT
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
+
+        intersection.executeStep();   // stepsInPhase=1 ≥ 1 → next = NS_LEFT
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_LEFT);
+
+        intersection.setPhase(NS_LEFT);
+        intersection.executeStep();   // → NS_EW_CLEARANCE
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_EW_CLEARANCE);
+
+        intersection.setPhase(NS_EW_CLEARANCE);
+        intersection.executeStep();   // clearance, stepsInPhase=1 ≥ 1 → EW_STRAIGHT_RIGHT
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_STRAIGHT_RIGHT);
+
+        intersection.setPhase(EW_STRAIGHT_RIGHT);
+        intersection.executeStep();   // → EW_LEFT
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_LEFT);
+
+        intersection.setPhase(EW_LEFT);
+        intersection.executeStep();   // → EW_NS_CLEARANCE
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_NS_CLEARANCE);
+
+        intersection.setPhase(EW_NS_CLEARANCE);
+        intersection.executeStep();   // → NS_STRAIGHT_RIGHT (wrap)
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
+    }
+
+    @Test
+    void fixedTime_clearanceAlwaysLastsOneStep_ignoringPhaseDuration() {
+        FixedTimeStrategy strategy = new FixedTimeStrategy(10); // long duration
+        intersection.setPhase(NS_EW_CLEARANCE);
+
+        // stepsInPhase=0 → keep clearance
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_EW_CLEARANCE);
+
+        intersection.executeStep(); // stepsInPhase=1 → advance regardless of phaseDuration=10
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_STRAIGHT_RIGHT);
     }
 
     @Test
@@ -124,17 +179,17 @@ class StrategyTest {
         FixedTimeStrategy strategy = new FixedTimeStrategy(); // default = 3
         intersection.executeStep();
         intersection.executeStep();
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_GREEN);
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_STRAIGHT_RIGHT);
 
         intersection.executeStep();
-        assertThat(strategy.determinePhase(intersection)).isEqualTo(EW_GREEN);
+        assertThat(strategy.determinePhase(intersection)).isEqualTo(NS_LEFT);
     }
 
     // ---- Helper ----
 
-    private void addVehicles(Direction dir, int count) {
+    private void addVehicles(Direction from, Direction to, int count) {
         for (int i = 0; i < count; i++) {
-            intersection.addVehicle(new Vehicle("v" + dir + i, dir, SOUTH, new PassiveDriver()));
+            intersection.addVehicle(new Vehicle("v" + from + i, from, to, new PassiveDriver()));
         }
     }
 }

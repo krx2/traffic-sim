@@ -21,15 +21,18 @@ class SimulationServiceTest {
 
     @Test
     void specExample_exactStepStatuses() {
+        // vehicle1: south→north = SOUTH STRAIGHT (NS_STRAIGHT_RIGHT = GREEN)
+        // vehicle2: north→south = NORTH STRAIGHT (NS_STRAIGHT_RIGHT = GREEN)
+        // vehicle3/4: west→south = WEST RIGHT_TURN (EW_STRAIGHT_RIGHT = GREEN)
         var request = new SimulationRequest(List.of(
                 addVehicle("vehicle1", "south", "north"),
                 addVehicle("vehicle2", "north", "south"),
-                step(),
-                step(),
+                step(),  // step 1: NS phase → vehicle1 + vehicle2 leave
+                step(),  // step 2: NS empty, phase switches to EW; no vehicles yet
                 addVehicle("vehicle3", "west", "south"),
                 addVehicle("vehicle4", "west", "south"),
-                step(),
-                step()
+                step(),  // step 3: EW phase → vehicle3 leaves
+                step()   // step 4: vehicle4 leaves
         ));
 
         var response = service.run(request);
@@ -72,6 +75,7 @@ class SimulationServiceTest {
 
     @Test
     void multipleVehiclesSameRoad_fifoOrder() {
+        // All go NORTH→SOUTH = STRAIGHT lane, GREEN in NS_STRAIGHT_RIGHT
         var request = new SimulationRequest(List.of(
                 addVehicle("first",  "north", "south", DriverStrategyType.PASSIVE),
                 addVehicle("second", "north", "south", DriverStrategyType.PASSIVE),
@@ -89,8 +93,11 @@ class SimulationServiceTest {
     }
 
     @Test
-    void vehiclesOnAllFourRoads_nsPhaseReleasesNsOnly() {
-        // Initial phase is NS_GREEN → EAST and WEST vehicles wait
+    void vehiclesOnNsRoads_nsPhaseReleasesThemImmediately() {
+        // n1: north→south = STRAIGHT (GREEN in initial NS_STRAIGHT_RIGHT)
+        // s1: south→north = STRAIGHT (GREEN in initial NS_STRAIGHT_RIGHT)
+        // e1: east→west   = STRAIGHT (RED initially)
+        // w1: west→east   = STRAIGHT (RED initially)
         var request = new SimulationRequest(List.of(
                 addVehicle("n1", "north", "south", DriverStrategyType.PASSIVE),
                 addVehicle("s1", "south", "north", DriverStrategyType.PASSIVE),
@@ -99,38 +106,35 @@ class SimulationServiceTest {
                 step()
         ));
 
-        // NS=2, EW=2 → tie → keep NS_GREEN (current phase, hysteresis)
         var steps = service.run(request, new WeightedQueueStrategy()).stepStatuses();
 
+        // NS has vehicles → stays in NS_STRAIGHT_RIGHT → n1 and s1 leave
         assertThat(steps.get(0).leftVehicles())
-                .as("Only NS vehicles pass when NS_GREEN and loads are tied")
                 .containsExactlyInAnyOrder("n1", "s1");
     }
 
     @Test
-    void fixedTimeStrategy_switchesAfterDuration() {
+    void fixedTimeStrategy_cyclesThroughPhases() {
+        // FixedTimeStrategy(1): NS_STRAIGHT_RIGHT → NS_LEFT → NS_EW_CLEARANCE → EW_STRAIGHT_RIGHT → EW_LEFT → …
+        // ns1: NORTH→SOUTH = STRAIGHT = GREEN in NS_STRAIGHT_RIGHT
+        // ew1: WEST→EAST   = STRAIGHT = GREEN in EW_STRAIGHT_RIGHT (phase 4)
         var request = new SimulationRequest(List.of(
                 addVehicle("ns1", "north", "south", DriverStrategyType.PASSIVE),
-                addVehicle("ns2", "north", "south", DriverStrategyType.PASSIVE),
-                addVehicle("ns3", "north", "south", DriverStrategyType.PASSIVE),
                 addVehicle("ew1", "west",  "east",  DriverStrategyType.PASSIVE),
-                addVehicle("ew2", "west",  "east",  DriverStrategyType.PASSIVE),
-                step(), // step 1: NS_GREEN (0 steps → keep), ns1 passes
-                step(), // step 2: NS_GREEN (1 step  → keep), ns2 passes
-                step(), // step 3: NS_GREEN (2 steps → keep), ns3 passes
-                step(), // step 4: 3 steps ≥ duration(3) → switch to EW_GREEN, ew1 passes
-                step()  // step 5: EW_GREEN (0 steps → keep), ew2 passes
+                step(), // 0 steps → keep NS_STRAIGHT_RIGHT → ns1 leaves; stepsInPhase=1
+                step(), // 1≥1 → NS_LEFT (YELLOW→RED for NS straight); nothing leaves; stepsInPhase=1
+                step(), // 1≥1 → NS_EW_CLEARANCE (all RED); nothing leaves; stepsInPhase=1
+                step(), // clearance 1≥1 → EW_STRAIGHT_RIGHT → ew1 leaves; stepsInPhase=1
+                step()  // 1≥1 → EW_LEFT; nothing leaves
         ));
 
-        var steps = service.run(request, new FixedTimeStrategy(3)).stepStatuses();
+        var steps = service.run(request, new FixedTimeStrategy(1)).stepStatuses();
 
         assertThat(steps.get(0).leftVehicles()).containsExactly("ns1");
-        assertThat(steps.get(1).leftVehicles()).containsExactly("ns2");
-        assertThat(steps.get(2).leftVehicles()).containsExactly("ns3");
-        // Step 4: phase transition NS→EW. N is YELLOW (ew1 not on NORTH, so no yellow effect).
-        // EW roads become GREEN → ew1 passes. NS roads become YELLOW (empty queues).
+        assertThat(steps.get(1).leftVehicles()).isEmpty(); // NS_LEFT
+        assertThat(steps.get(2).leftVehicles()).isEmpty(); // NS_EW_CLEARANCE (all red)
         assertThat(steps.get(3).leftVehicles()).containsExactly("ew1");
-        assertThat(steps.get(4).leftVehicles()).containsExactly("ew2");
+        assertThat(steps.get(4).leftVehicles()).isEmpty(); // EW_LEFT
     }
 
     @Test
@@ -147,27 +151,26 @@ class SimulationServiceTest {
     }
 
     @Test
-    void safetyInvariant_noConflictingGreenLights() {
-        // After every step, at most one axis should have GREEN (not both N and E simultaneously)
+    void safetyInvariant_nsAndEwNeverBothGreenSimultaneously() {
+        // After every step, at most one axis has non-RED straight lanes
+        // (aggressive drivers on yellow don't count as conflicting green)
         var request = new SimulationRequest(List.of(
                 addVehicle("n1", "north", "south", DriverStrategyType.PASSIVE),
                 addVehicle("w1", "west",  "east",  DriverStrategyType.PASSIVE),
                 addVehicle("w2", "west",  "east",  DriverStrategyType.PASSIVE),
-                addVehicle("w3", "west",  "east",  DriverStrategyType.PASSIVE),
                 step(), step(), step(), step()
         ));
 
-        // We verify indirectly: only NS or EW vehicles leave per step, never both simultaneously
-        // (yellow road might release aggressive drivers, but that's a different road, not conflicting)
         var steps = service.run(request, new WeightedQueueStrategy()).stepStatuses();
 
         steps.forEach(s -> {
             boolean hasNs = s.leftVehicles().contains("n1");
             boolean hasEw = s.leftVehicles().stream().anyMatch(id -> id.startsWith("w"));
-            // It's OK to have both when yellow transition (n1 aggressive on yellow + EW green),
-            // but n1 here is PASSIVE → can't pass yellow → never conflicts with EW green
+            // PASSIVE n1 cannot pass yellow → if n1 exits it was on GREEN → no EW green conflict
             if (hasNs) {
-                assertThat(hasEw).as("PASSIVE north vehicle must not exit same step as EW vehicles (no yellow pass)").isFalse();
+                assertThat(hasEw)
+                        .as("PASSIVE NS vehicle must not exit same step as EW vehicles")
+                        .isFalse();
             }
         });
     }

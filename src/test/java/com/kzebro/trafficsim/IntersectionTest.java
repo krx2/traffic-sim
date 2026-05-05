@@ -4,6 +4,7 @@ import com.kzebro.trafficsim.memento.IntersectionMemento;
 import com.kzebro.trafficsim.memento.SimulationHistory;
 import com.kzebro.trafficsim.model.Direction;
 import com.kzebro.trafficsim.model.Intersection;
+import com.kzebro.trafficsim.model.LaneType;
 import com.kzebro.trafficsim.model.LightPhase;
 import com.kzebro.trafficsim.model.Vehicle;
 import com.kzebro.trafficsim.model.light.LightColor;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static com.kzebro.trafficsim.model.Direction.*;
+import static com.kzebro.trafficsim.model.LaneType.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class IntersectionTest {
@@ -29,23 +31,32 @@ class IntersectionTest {
     // ---- Initial state ----
 
     @Test
-    void initialPhase_isNsGreen() {
-        assertThat(intersection.getCurrentPhase()).isEqualTo(LightPhase.NS_GREEN);
+    void initialPhase_isNsStraightRight() {
+        assertThat(intersection.getCurrentPhase()).isEqualTo(LightPhase.NS_STRAIGHT_RIGHT);
     }
 
     @Test
-    void initialLights_northAndSouthGreen_eastAndWestRed() {
-        assertLight(NORTH, LightColor.GREEN);
-        assertLight(SOUTH, LightColor.GREEN);
-        assertLight(EAST,  LightColor.RED);
-        assertLight(WEST,  LightColor.RED);
+    void initialLights_northSouthStraightRight_green_leftAndEW_red() {
+        assertLane(NORTH, STRAIGHT,    LightColor.GREEN);
+        assertLane(NORTH, RIGHT_TURN,  LightColor.GREEN);
+        assertLane(NORTH, LEFT_TURN,   LightColor.RED);
+        assertLane(SOUTH, STRAIGHT,    LightColor.GREEN);
+        assertLane(SOUTH, RIGHT_TURN,  LightColor.GREEN);
+        assertLane(SOUTH, LEFT_TURN,   LightColor.RED);
+        assertLane(EAST,  STRAIGHT,    LightColor.RED);
+        assertLane(EAST,  RIGHT_TURN,  LightColor.RED);
+        assertLane(EAST,  LEFT_TURN,   LightColor.RED);
+        assertLane(WEST,  STRAIGHT,    LightColor.RED);
+        assertLane(WEST,  RIGHT_TURN,  LightColor.RED);
+        assertLane(WEST,  LEFT_TURN,   LightColor.RED);
     }
 
     // ---- executeStep: basic vehicle movement ----
 
     @Test
-    void executeStep_greenRoadReleasesFirstVehicle() {
-        Vehicle v = passive("v1", NORTH);
+    void executeStep_greenLaneReleasesFirstVehicle() {
+        // NORTH → SOUTH = STRAIGHT lane, GREEN in NS_STRAIGHT_RIGHT
+        Vehicle v = passive("v1", NORTH, SOUTH);
         intersection.addVehicle(v);
 
         List<Vehicle> left = intersection.executeStep();
@@ -55,8 +66,9 @@ class IntersectionTest {
     }
 
     @Test
-    void executeStep_redRoadKeepsVehicle() {
-        intersection.addVehicle(passive("v1", WEST)); // WEST is RED initially
+    void executeStep_redLaneKeepsVehicle() {
+        // WEST → EAST = STRAIGHT lane on WEST, RED initially
+        intersection.addVehicle(passive("v1", WEST, EAST));
 
         List<Vehicle> left = intersection.executeStep();
 
@@ -65,9 +77,9 @@ class IntersectionTest {
     }
 
     @Test
-    void executeStep_onlyFrontVehiclePassesPerRoadPerStep() {
-        Vehicle v1 = passive("v1", NORTH);
-        Vehicle v2 = passive("v2", NORTH);
+    void executeStep_onlyFrontVehiclePassesPerLanePerStep() {
+        Vehicle v1 = passive("v1", NORTH, SOUTH);
+        Vehicle v2 = passive("v2", NORTH, SOUTH);
         intersection.addVehicle(v1);
         intersection.addVehicle(v2);
 
@@ -79,9 +91,9 @@ class IntersectionTest {
     }
 
     @Test
-    void executeStep_bothNorthAndSouthPassSimultaneously() {
-        Vehicle vn = passive("vn", NORTH);
-        Vehicle vs = passive("vs", SOUTH);
+    void executeStep_northAndSouthStraightPassSimultaneously() {
+        Vehicle vn = passive("vn", NORTH, SOUTH);
+        Vehicle vs = passive("vs", SOUTH, NORTH);
         intersection.addVehicle(vn);
         intersection.addVehicle(vs);
 
@@ -104,27 +116,57 @@ class IntersectionTest {
         assertThat(intersection.getStepsInCurrentPhase()).isEqualTo(2);
     }
 
+    @Test
+    void executeStep_rightTurnVehicle_passesOnNsPhase() {
+        // NORTH → WEST = RIGHT_TURN lane, GREEN in NS_STRAIGHT_RIGHT
+        Vehicle v = passive("v1", NORTH, WEST);
+        intersection.addVehicle(v);
+
+        assertThat(intersection.executeStep()).containsExactly(v);
+    }
+
+    @Test
+    void executeStep_leftTurnVehicle_blockedInNsStraightRightPhase() {
+        // NORTH → EAST = LEFT_TURN lane, RED in NS_STRAIGHT_RIGHT
+        Vehicle v = passive("v1", NORTH, EAST);
+        intersection.addVehicle(v);
+
+        assertThat(intersection.executeStep()).isEmpty();
+        assertThat(intersection.getLaneQueueSize(NORTH, LEFT_TURN)).isEqualTo(1);
+    }
+
     // ---- setPhase: transitions ----
 
     @Test
     void setPhase_samePhase_doesNothing() {
-        intersection.setPhase(LightPhase.NS_GREEN);   // same as initial
+        intersection.setPhase(LightPhase.NS_STRAIGHT_RIGHT);
 
-        assertLight(NORTH, LightColor.GREEN);
-        assertLight(SOUTH, LightColor.GREEN);
-        assertLight(EAST,  LightColor.RED);
-        assertLight(WEST,  LightColor.RED);
+        assertLane(NORTH, STRAIGHT,   LightColor.GREEN);
+        assertLane(EAST,  STRAIGHT,   LightColor.RED);
         assertThat(intersection.getStepsInCurrentPhase()).isZero();
     }
 
     @Test
-    void setPhase_differentPhase_outgoingBecomesYellow_incomingBecomesGreen() {
-        intersection.setPhase(LightPhase.EW_GREEN);
+    void setPhase_toNsLeft_straightRightBecomesYellow_leftBecomesGreen() {
+        intersection.setPhase(LightPhase.NS_LEFT);
 
-        assertLight(NORTH, LightColor.YELLOW);
-        assertLight(SOUTH, LightColor.YELLOW);
-        assertLight(EAST,  LightColor.GREEN);
-        assertLight(WEST,  LightColor.GREEN);
+        assertLane(NORTH, STRAIGHT,   LightColor.YELLOW);
+        assertLane(NORTH, RIGHT_TURN, LightColor.YELLOW);
+        assertLane(NORTH, LEFT_TURN,  LightColor.GREEN);
+        assertLane(SOUTH, LEFT_TURN,  LightColor.GREEN);
+        assertLane(EAST,  STRAIGHT,   LightColor.RED);
+        assertLane(WEST,  STRAIGHT,   LightColor.RED);
+    }
+
+    @Test
+    void setPhase_toEwStraightRight_nsBecomesYellow_ewBecomesGreen() {
+        intersection.setPhase(LightPhase.EW_STRAIGHT_RIGHT);
+
+        assertLane(NORTH, STRAIGHT,   LightColor.YELLOW);
+        assertLane(NORTH, RIGHT_TURN, LightColor.YELLOW);
+        assertLane(EAST,  STRAIGHT,   LightColor.GREEN);
+        assertLane(EAST,  RIGHT_TURN, LightColor.GREEN);
+        assertLane(EAST,  LEFT_TURN,  LightColor.RED);
     }
 
     @Test
@@ -133,25 +175,26 @@ class IntersectionTest {
         intersection.executeStep();
         assertThat(intersection.getStepsInCurrentPhase()).isEqualTo(2);
 
-        intersection.setPhase(LightPhase.EW_GREEN);
+        intersection.setPhase(LightPhase.EW_STRAIGHT_RIGHT);
         assertThat(intersection.getStepsInCurrentPhase()).isZero();
     }
 
     @Test
     void executeStep_afterPhaseSwitch_yellowFinalizesToRed() {
-        intersection.setPhase(LightPhase.EW_GREEN);  // N and S become YELLOW
+        intersection.setPhase(LightPhase.EW_STRAIGHT_RIGHT);  // NS STRAIGHT/RIGHT → YELLOW
         intersection.executeStep();
 
-        assertLight(NORTH, LightColor.RED);
-        assertLight(SOUTH, LightColor.RED);
+        assertLane(NORTH, STRAIGHT,   LightColor.RED);
+        assertLane(NORTH, RIGHT_TURN, LightColor.RED);
+        assertLane(SOUTH, STRAIGHT,   LightColor.RED);
     }
 
     // ---- Yellow light + DriverStrategy ----
 
     @Test
     void aggressiveDriver_passesOnYellowDuringPhaseTransition() {
-        intersection.addVehicle(aggressive("ag", NORTH));
-        intersection.setPhase(LightPhase.EW_GREEN);  // N → YELLOW
+        intersection.addVehicle(aggressive("ag", NORTH, SOUTH));  // NORTH STRAIGHT
+        intersection.setPhase(LightPhase.EW_STRAIGHT_RIGHT);      // NORTH STRAIGHT → YELLOW
 
         List<Vehicle> left = intersection.executeStep();
 
@@ -160,33 +203,32 @@ class IntersectionTest {
 
     @Test
     void passiveDriver_blockedOnYellowDuringPhaseTransition() {
-        intersection.addVehicle(passive("pa", NORTH));
-        intersection.setPhase(LightPhase.EW_GREEN);  // N → YELLOW
+        intersection.addVehicle(passive("pa", NORTH, SOUTH));     // NORTH STRAIGHT
+        intersection.setPhase(LightPhase.EW_STRAIGHT_RIGHT);      // NORTH STRAIGHT → YELLOW
 
         List<Vehicle> left = intersection.executeStep();
 
         assertThat(left).isEmpty();
-        assertThat(intersection.getQueueSize(NORTH)).isEqualTo(1);
+        assertThat(intersection.getLaneQueueSize(NORTH, STRAIGHT)).isEqualTo(1);
     }
 
     // ---- Memento ----
 
     @Test
     void saveMemento_capturesCurrentState() {
-        Vehicle vn = passive("vn", NORTH);
-        intersection.addVehicle(vn);
-        intersection.addVehicle(passive("vw", WEST));
+        intersection.addVehicle(passive("vn", NORTH, SOUTH));  // NORTH STRAIGHT
+        intersection.addVehicle(passive("vw", WEST,  EAST));   // WEST STRAIGHT
 
         IntersectionMemento memento = intersection.saveMemento();
 
-        assertThat(memento.phase()).isEqualTo(LightPhase.NS_GREEN);
-        assertThat(memento.vehicleQueues().get(NORTH)).hasSize(1);
-        assertThat(memento.vehicleQueues().get(WEST)).hasSize(1);
+        assertThat(memento.phase()).isEqualTo(LightPhase.NS_STRAIGHT_RIGHT);
+        assertThat(memento.vehicleQueues().get(NORTH).get(STRAIGHT)).hasSize(1);
+        assertThat(memento.vehicleQueues().get(WEST).get(STRAIGHT)).hasSize(1);
     }
 
     @Test
     void restoreMemento_restoresPreviousState() {
-        intersection.addVehicle(passive("v1", NORTH));
+        intersection.addVehicle(passive("v1", NORTH, SOUTH));
         IntersectionMemento before = intersection.saveMemento();
 
         intersection.executeStep();   // v1 leaves
@@ -195,14 +237,14 @@ class IntersectionTest {
         intersection.restoreMemento(before);
 
         assertThat(intersection.getQueueSize(NORTH)).isEqualTo(1);
-        assertThat(intersection.getCurrentPhase()).isEqualTo(LightPhase.NS_GREEN);
+        assertThat(intersection.getCurrentPhase()).isEqualTo(LightPhase.NS_STRAIGHT_RIGHT);
     }
 
     @Test
     void simulationHistory_savesSnapshotAfterEachStep() {
         SimulationHistory history = new SimulationHistory();
         intersection.addObserver(history);
-        intersection.addVehicle(passive("v1", NORTH));
+        intersection.addVehicle(passive("v1", NORTH, SOUTH));
 
         assertThat(history.size()).isZero();
         intersection.executeStep();
@@ -215,28 +257,28 @@ class IntersectionTest {
     void simulationHistory_undoRestoresPreviousSnapshot() {
         SimulationHistory history = new SimulationHistory();
         intersection.addObserver(history);
-        intersection.addVehicle(passive("v1", NORTH));
-        intersection.addVehicle(passive("v2", NORTH));
+        intersection.addVehicle(passive("v1", NORTH, SOUTH));
+        intersection.addVehicle(passive("v2", NORTH, SOUTH));
 
-        intersection.executeStep();  // v1 leaves, snapshot saved
+        intersection.executeStep();  // v1 leaves
         assertThat(intersection.getQueueSize(NORTH)).isEqualTo(1);
 
-        history.undo(intersection);  // restore pre-step-1 state
+        history.undo(intersection);
         assertThat(intersection.getQueueSize(NORTH)).isEqualTo(2);
     }
 
     // ---- Helpers ----
 
-    private Vehicle passive(String id, Direction start) {
-        return new Vehicle(id, start, SOUTH, new PassiveDriver());
+    private Vehicle passive(String id, Direction start, Direction end) {
+        return new Vehicle(id, start, end, new PassiveDriver());
     }
 
-    private Vehicle aggressive(String id, Direction start) {
-        return new Vehicle(id, start, SOUTH, new AggressiveDriver());
+    private Vehicle aggressive(String id, Direction start, Direction end) {
+        return new Vehicle(id, start, end, new AggressiveDriver());
     }
 
-    private void assertLight(Direction dir, LightColor expected) {
-        LightColor actual = intersection.getRoads().get(dir).getTrafficLight().getColor();
-        assertThat(actual).as("Light on %s should be %s", dir, expected).isEqualTo(expected);
+    private void assertLane(Direction dir, LaneType laneType, LightColor expected) {
+        LightColor actual = intersection.getRoads().get(dir).getLane(laneType).getTrafficLight().getColor();
+        assertThat(actual).as("Light on %s/%s should be %s", dir, laneType, expected).isEqualTo(expected);
     }
 }

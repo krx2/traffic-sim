@@ -10,11 +10,28 @@ function pickRandom(directions) {
 
 let vehicleCounter = 1
 
+// ─── JSON import helper ─────────────────────────────────────────────────────
+
+function parseJson(text) {
+  const parsed = JSON.parse(text.trim())
+  const commands = parsed.commands ?? parsed
+  if (!Array.isArray(commands)) throw new Error('Oczekiwano tablicy "commands"')
+  return commands
+}
+
+// ─── Component ──────────────────────────────────────────────────────────────
+
 export default function CommandPanel({ commands, setCommands, onRun, onReset, loading }) {
-  const [vehicleId, setVehicleId] = useState('vehicle1')
-  const [startRoad, setStartRoad] = useState('random')
-  const [endRoad, setEndRoad] = useState('random')
+  const [vehicleId, setVehicleId]       = useState('vehicle1')
+  const [startRoad, setStartRoad]       = useState('random')
+  const [endRoad, setEndRoad]           = useState('random')
   const [driverStrategy, setDriverStrategy] = useState('')
+
+  const [jsonOpen, setJsonOpen]   = useState(false)
+  const [jsonText, setJsonText]   = useState('')
+  const [jsonError, setJsonError] = useState(null)
+
+  // ── GUI add helpers ───────────────────────────────────────────────────────
 
   const addVehicle = () => {
     if (!vehicleId.trim()) return
@@ -38,13 +55,24 @@ export default function CommandPanel({ commands, setCommands, onRun, onReset, lo
     setVehicleId(`vehicle${vehicleCounter}`)
   }
 
-  const addStep = () => {
-    setCommands(prev => [...prev, { type: 'step' }])
+  const addStep = () => setCommands(prev => [...prev, { type: 'step' }])
+
+  const removeCommand = (index) => setCommands(prev => prev.filter((_, i) => i !== index))
+
+  // ── JSON import ───────────────────────────────────────────────────────────
+
+  const loadJson = () => {
+    try {
+      setCommands(parseJson(jsonText))
+      setJsonText('')
+      setJsonError(null)
+      setJsonOpen(false)
+    } catch (e) {
+      setJsonError(e.message)
+    }
   }
 
-  const removeCommand = (index) => {
-    setCommands(prev => prev.filter((_, i) => i !== index))
-  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const stepCount = commands.filter(c => c.type === 'step').length
   const canRun = commands.length > 0 && stepCount > 0
@@ -53,6 +81,7 @@ export default function CommandPanel({ commands, setCommands, onRun, onReset, lo
     <div className="panel command-panel">
       <div className="panel-title">Komendy</div>
 
+      {/* ── GUI form ── */}
       <div className="section">
         <div className="section-label">Dodaj pojazd</div>
         <input
@@ -65,16 +94,14 @@ export default function CommandPanel({ commands, setCommands, onRun, onReset, lo
         <div className="field-row">
           <label>Start</label>
           <select value={startRoad} onChange={e => setStartRoad(e.target.value)}>
-            <option value="random">🎲 Losowy</option>
-            {DIRECTIONS.map(d => (
-              <option key={d} value={d}>{DIR_LABEL[d]}</option>
-            ))}
+            <option value="random">Losowy</option>
+            {DIRECTIONS.map(d => <option key={d} value={d}>{DIR_LABEL[d]}</option>)}
           </select>
         </div>
         <div className="field-row">
           <label>Cel</label>
           <select value={endRoad} onChange={e => setEndRoad(e.target.value)}>
-            <option value="random">🎲 Losowy</option>
+            <option value="random">Losowy</option>
             {DIRECTIONS.filter(d => startRoad === 'random' || d !== startRoad).map(d => (
               <option key={d} value={d}>{DIR_LABEL[d]}</option>
             ))}
@@ -88,17 +115,42 @@ export default function CommandPanel({ commands, setCommands, onRun, onReset, lo
             <option value="AGGRESSIVE">Agresywny</option>
           </select>
         </div>
-        <button className="btn btn-add-vehicle" onClick={addVehicle}>
-          + Dodaj pojazd
-        </button>
+        <button className="btn btn-add-vehicle" onClick={addVehicle}>+ Dodaj pojazd</button>
       </div>
 
       <div className="section">
-        <button className="btn btn-add-step" onClick={addStep}>
-          + Dodaj krok symulacji
-        </button>
+        <button className="btn btn-add-step" onClick={addStep}>+ Dodaj krok symulacji</button>
       </div>
 
+      {/* ── JSON import ── */}
+      <div className="section editor-section">
+        <button
+          className="editor-toggle"
+          onClick={() => { setJsonOpen(o => !o); setJsonError(null) }}
+        >
+          <span className={`editor-chevron ${jsonOpen ? 'open' : ''}`}>›</span>
+          Wklej JSON
+        </button>
+
+        {jsonOpen && (
+          <div className="editor-body">
+            <textarea
+              className="editor-textarea"
+              value={jsonText}
+              onChange={e => { setJsonText(e.target.value); setJsonError(null) }}
+              spellCheck={false}
+              rows={8}
+              placeholder={'{\n  "commands": [\n    {"type":"addVehicle","vehicleId":"v1","startRoad":"north","endRoad":"south"},\n    {"type":"step"}\n  ]\n}'}
+            />
+            {jsonError && <pre className="editor-error">{jsonError}</pre>}
+            <button className="btn btn-editor-replace" onClick={loadJson}>
+              Załaduj
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Command list ── */}
       <div className="command-list-wrapper">
         <div className="section-label">
           Lista komend
@@ -138,7 +190,7 @@ export default function CommandPanel({ commands, setCommands, onRun, onReset, lo
           onClick={onRun}
           disabled={loading || !canRun}
         >
-          {loading ? '⏳ Symulowanie…' : '▶ Uruchom'}
+          {loading ? 'Symulowanie…' : 'Uruchom'}
         </button>
       </div>
     </div>
